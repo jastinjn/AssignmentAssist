@@ -1,0 +1,285 @@
+generator client {
+  provider             = "prisma-client-py"
+  recursive_type_depth = 5
+  interface            = "asyncio"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  student
+  teacher
+  admin
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String
+  role          UserRole      @default(teacher)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  classesJoined SchoolClass[] @relation("ClassStudents")
+  classesTaught SchoolClass[] @relation("ClassTeachers")
+  assignments   Assignment[]  @relation("AssignmentCreatedBy")
+  rubrics       Rubric[]
+  submissions   Submission[]
+  chatHistory   ChatHistory[]
+}
+
+// Renamed from Class to avoid Python keyword conflict; maps to "Class" table
+model SchoolClass {
+  id          String       @id @default(cuid())
+  code        String       @unique
+  name        String
+  description String?      @db.Text
+  level       Level
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  teachers    User[]       @relation("ClassTeachers")
+  syllabusId  String
+  syllabus    Syllabus     @relation(fields: [syllabusId], references: [id], onDelete: Cascade)
+  students    User[]       @relation("ClassStudents")
+  deletedAt   DateTime?
+  assignments Assignment[]
+  submissions Submission[]
+
+  @@map("Class")
+}
+
+model Assignment {
+  id          String        @id @default(cuid())
+  title       String
+  description String?
+  level       Level
+  dueDate     DateTime
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  createdById String
+  createdBy   User          @relation("AssignmentCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  syllabusId  String
+  syllabus    Syllabus      @relation(fields: [syllabusId], references: [id], onDelete: Cascade)
+  classes     SchoolClass[]
+  submissions Submission[]
+  questions   Question[]
+  chatHistory ChatHistory[]
+}
+
+model Submission {
+  id                String             @id @default(cuid())
+  isMarked          Boolean            @default(false)
+  returnedAt        DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  deletedAt         DateTime?
+  assignmentId      String
+  assignment        Assignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId         String
+  student           User               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId           String
+  schoolClass       SchoolClass        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  questionResponses QuestionResponse[]
+
+  @@unique([studentId, assignmentId])
+}
+
+model Question {
+  id                String             @id @default(cuid())
+  questionNumber    String
+  questionPrompt    String             @db.Text
+  assignmentId      String
+  assignment        Assignment         @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  rubricId          String?
+  rubric            Rubric?            @relation(fields: [rubricId], references: [id], onDelete: SetNull)
+  questionResponses QuestionResponse[]
+  topics            Topic[]
+}
+
+model QuestionResponse {
+  id              String           @id @default(cuid())
+  content         String           @db.Text
+  questionId      String
+  question        Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  submissionId    String
+  submission      Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  comments        Comment[]
+  overallFeedback String?          @db.Text
+  constructGrades ConstructGrade[]
+}
+
+enum CommentStatus {
+  approved
+  rejected
+  deleted
+}
+
+model Comment {
+  id                 String           @id @default(cuid())
+  content            String           @db.Text
+  aiContent          String?          @db.Text
+  startIndex         Int
+  endIndex           Int
+  highlightedText    String           @db.Text
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  questionResponseId String
+  questionResponse   QuestionResponse @relation(fields: [questionResponseId], references: [id], onDelete: Cascade)
+  status             CommentStatus    @default(approved)
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+model ChatMessage {
+  id            String      @id @default(cuid())
+  role          MessageRole
+  content       String      @db.Text
+  payload       String?     @db.Text
+  timestamp     DateTime    @default(now())
+  chatHistoryId String
+  chatHistory   ChatHistory @relation(fields: [chatHistoryId], references: [id], onDelete: Cascade)
+}
+
+model ChatHistory {
+  id                String        @id @default(cuid())
+  summarizedContext String?       @db.Text
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  assignmentId      String?
+  assignment        Assignment?   @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages          ChatMessage[]
+
+  @@index([assignmentId])
+  @@index([userId, assignmentId])
+}
+
+model Rubric {
+  id          String      @id @default(cuid())
+  name        String
+  description String?     @db.Text
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  userId      String?
+  user        User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  syllabi     Syllabus[]
+  questions   Question[]
+  constructs  Construct[]
+}
+
+model Construct {
+  id              String           @id @default(cuid())
+  name            String
+  description     String?          @db.Text
+  order           Int              @default(0)
+  rubricId        String
+  rubric          Rubric           @relation(fields: [rubricId], references: [id], onDelete: Cascade)
+  bands           Band[]
+  constructGrades ConstructGrade[]
+}
+
+model Band {
+  id              String           @id @default(cuid())
+  level           Int
+  minMarks        Int
+  maxMarks        Int
+  descriptor      String           @db.Text
+  constructId     String
+  rubricConstruct Construct        @relation(fields: [constructId], references: [id], onDelete: Cascade)
+  constructGrades ConstructGrade[]
+}
+
+model ConstructGrade {
+  id                 String           @id @default(cuid())
+  constructId        String
+  rubricConstruct    Construct        @relation(fields: [constructId], references: [id], onDelete: Cascade)
+  bandId             String
+  band               Band             @relation(fields: [bandId], references: [id], onDelete: Cascade)
+  marksAwarded       Int?
+  explanation        String?          @db.Text
+  questionResponseId String
+  questionResponse   QuestionResponse @relation(fields: [questionResponseId], references: [id], onDelete: Cascade)
+
+  @@unique([questionResponseId, constructId])
+}
+
+enum Subject {
+  geography
+}
+
+enum Level {
+  sec1
+  sec2
+  sec3
+  sec4
+  sec5
+  jc1
+  jc2
+  jc3
+}
+
+model Syllabus {
+  id          String           @id @default(cuid())
+  code        Int?             @unique
+  name        String
+  description String?          @db.Text
+  subject     Subject
+  levels      Level[]
+  order       Int              @default(0)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  clusters    OrderedCluster[]
+  classes     SchoolClass[]
+  assignments Assignment[]
+  rubrics     Rubric[]
+}
+
+model Cluster {
+  id      String           @id @default(cuid())
+  name    String
+  syllabi OrderedCluster[]
+  topics  Topic[]
+}
+
+model OrderedCluster {
+  id         String      @id @default(cuid())
+  clusterId  String
+  cluster    Cluster     @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  syllabusId String
+  syllabus   Syllabus    @relation(fields: [syllabusId], references: [id], onDelete: Cascade)
+  order      Int
+
+  @@unique([clusterId, syllabusId])
+}
+
+model Topic {
+  id        String     @id @default(cuid())
+  name      String
+  content   String?    @db.Text
+  order     Int
+  clusterId String
+  cluster   Cluster    @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  questions Question[]
+}
+
+enum LoginType {
+  icon
+  mims
+}
+
+model WhitelistedEmail {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  role      UserRole
+  school    String
+  loginType LoginType
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
