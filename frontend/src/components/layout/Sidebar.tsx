@@ -1,6 +1,5 @@
 import { SquarePen } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   Sidebar as ShadcnSidebar,
@@ -30,15 +29,11 @@ export function Sidebar({ histories, loading, activeHistoryId, onSelectHistory, 
           Assignment Assist
         </span>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onNewChat}
-              className="text-muted-foreground hover:text-primary h-7 w-7"
-            >
-              <SquarePen className="w-4 h-4" />
-            </Button>
+          <TooltipTrigger
+            onClick={onNewChat}
+            className="inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-primary hover:bg-accent h-7 w-7 transition-colors"
+          >
+            <SquarePen className="w-4 h-4" />
           </TooltipTrigger>
           <TooltipContent>New conversation</TooltipContent>
         </Tooltip>

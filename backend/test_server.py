@@ -25,7 +25,23 @@ os.environ.setdefault("TEACHER_USER_ID", "seed_teacher_id")
 # their module-level names are bound. We patch after import so the patch targets
 # the already-bound 'Runner' name in app.routers.chat's namespace.
 from app.main import app  # noqa: E402  (must come after os.environ setup)
+from app.db import get_db  # noqa: E402
+from fastapi import APIRouter  # noqa: E402
 from unittest.mock import MagicMock, patch  # noqa: E402
+
+_test_router = APIRouter()
+
+
+@_test_router.delete("/reset")
+async def reset_test_data():
+    """Delete all chat history and messages — called by Playwright globalTeardown."""
+    db = await get_db()
+    await db.chatmessage.delete_many()
+    await db.chathistory.delete_many()
+    return {"ok": True}
+
+
+app.include_router(_test_router, prefix="/api/test")
 
 MOCK_RESPONSE = "Based on recent scores and comments, Alice Chen needs the most support — she scored below the class average on both Knowledge & Understanding and Analysis & Argument."
 

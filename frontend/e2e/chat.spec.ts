@@ -1,5 +1,34 @@
 import { test, expect } from '@playwright/test'
 
+test('user clicks a shortcut button and receives a response in the chat', async ({ page }) => {
+  await page.goto('/')
+
+  // ── 1. Shortcut buttons are visible in the empty state ────────────────────
+  const main = page.getByRole('main')
+  const shortcut = main.getByRole('button', { name: 'Which of my students need help?' })
+  await expect(shortcut).toBeVisible()
+
+  // ── 2. Click the shortcut button ─────────────────────────────────────────
+  await shortcut.click()
+
+  // ── 3. User message appears in the chat (button text sent as message) ─────
+  await expect(main.getByText('Which of my students need help?')).toBeVisible()
+
+  // ── 4. Shortcut buttons disappear once a conversation is active ───────────
+  await expect(shortcut).not.toBeVisible()
+
+  // ── 5. Mocked response arrives from the backend ───────────────────────────
+  await expect(main.getByText(/Alice Chen/)).toBeVisible({ timeout: 10_000 })
+
+  // ── 6. Input is empty (no text was placed in the textarea) ────────────────
+  await expect(page.getByPlaceholder(/ask about your students/i)).toHaveValue('')
+
+  // ── 7. Conversation appears in the sidebar ────────────────────────────────
+  await expect(
+    page.locator('[data-sidebar="menu-button"]', { hasText: 'Which of my students need help?' }).first()
+  ).toBeVisible({ timeout: 5_000 })
+})
+
 test('user sends a message and receives a response in the chat', async ({ page }) => {
   await page.goto('/')
 
