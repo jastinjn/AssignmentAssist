@@ -44,17 +44,17 @@ async def _stream_events():
     yield _Event()
 
 
-_mock_result = MagicMock()
-_mock_result.stream_events = _stream_events
-
-_mock_runner = MagicMock()
-_mock_runner.run_streamed.return_value = _mock_result
-
-# Patch Runner in the chat router's module namespace for the lifetime of the process.
-patcher = patch("app.routers.chat.Runner", _mock_runner)
-patcher.start()
-
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="warning")
+    _mock_result = MagicMock()
+    _mock_result.stream_events = _stream_events
+
+    _mock_runner = MagicMock()
+    _mock_runner.run_streamed.return_value = _mock_result
+
+    # Patch Runner in the chat router's module namespace for the lifetime of the process.
+    patcher = patch("app.routers.chat.Runner", _mock_runner)
+    patcher.start()
+
+    uvicorn.run(app, host="127.0.0.1", port=8001, log_level="warning")

@@ -1,9 +1,5 @@
 import { test, expect } from '@playwright/test'
 
-// Must match MOCK_RESPONSE in backend/test_server.py
-const MOCK_RESPONSE =
-  'Based on recent scores and comments, Alice Chen needs the most support — she scored below the class average on both Knowledge & Understanding and Analysis & Argument.'
-
 test('user sends a message and receives a response in the chat', async ({ page }) => {
   await page.goto('/')
 
@@ -18,12 +14,21 @@ test('user sends a message and receives a response in the chat', async ({ page }
   // ── 3. Submit by pressing Enter ────────────────────────────────────────────
   await input.press('Enter')
 
+  // Scope chat assertions to the main content area to avoid matching sidebar items
+  const main = page.getByRole('main')
+
   // ── 4. User message appears in the chat ────────────────────────────────────
-  await expect(page.getByText('Which students need the most support?')).toBeVisible()
+  await expect(main.getByText('Which students need the most support?')).toBeVisible()
 
   // ── 5. Mocked response arrives from the backend and renders in a bubble ────
-  await expect(page.getByText(MOCK_RESPONSE)).toBeVisible({ timeout: 10_000 })
+  // Assert on a stable substring from the mock response in test_server.py
+  await expect(main.getByText(/Alice Chen/)).toBeVisible({ timeout: 10_000 })
 
   // ── 6. Input is cleared after sending ──────────────────────────────────────
   await expect(input).toHaveValue('')
+
+  // ── 7. Conversation appears in the sidebar (DB write + re-fetch confirmed) ─
+  await expect(
+    page.locator('[data-sidebar="menu-button"]', { hasText: 'Which students need the most support?' }).first()
+  ).toBeVisible({ timeout: 5_000 })
 })

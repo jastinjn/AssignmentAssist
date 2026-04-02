@@ -16,6 +16,8 @@ from app.services.chat_history import append_messages, create_history, load_hist
 
 router = APIRouter()
 
+PREVIEW_MAX_LENGTH = 80
+
 
 def _chunk(obj: dict) -> str:
     """Encode a UIMessageChunk as an SSE data line."""
@@ -109,7 +111,7 @@ async def get_histories():
             "id": h.id,
             "createdAt": h.createdAt.isoformat(),
             "updatedAt": h.updatedAt.isoformat(),
-            "preview": (h.messages[0].content[:80] if h.messages else "New conversation"),
+            "preview": (h.messages[0].content[:PREVIEW_MAX_LENGTH] if h.messages else "New conversation"),
         }
         for h in histories
     ]

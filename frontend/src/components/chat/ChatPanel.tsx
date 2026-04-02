@@ -151,7 +151,10 @@ export function ChatPanel({ historyId, onHistoryCreated }: Props) {
 					})),
 				);
 			})
-			.catch(() => setInitialMessages([]));
+			.catch(() => {
+				toast.error("Failed to load conversation history");
+				setInitialMessages([]);
+			});
 	}, [historyId]);
 
 	if (initialMessages === null) {

@@ -16,7 +16,11 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-client = TestClient(app)
+
+@pytest.fixture
+def client():
+    with TestClient(app) as c:
+        yield c
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +111,7 @@ def make_message(role: str, content: str, ts: datetime | None = None):
 
 class TestStreamEndpoint:
 
-    def test_returns_200_and_sse_content_type(self):
+    def test_returns_200_and_sse_content_type(self, client):
         with (
             patch("app.routers.chat.get_db", new=AsyncMock(return_value=MagicMock())),
             patch("app.routers.chat.load_history", new=AsyncMock(return_value=[])),
@@ -120,7 +124,7 @@ class TestStreamEndpoint:
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]
 
-    def test_response_includes_required_sse_headers(self):
+    def test_response_includes_required_sse_headers(self, client):
         with (
             patch("app.routers.chat.get_db", new=AsyncMock(return_value=MagicMock())),
             patch("app.routers.chat.load_history", new=AsyncMock(return_value=[])),
@@ -134,7 +138,7 @@ class TestStreamEndpoint:
         assert response.headers["x-chat-history-id"] == "new-id"
         assert response.headers["cache-control"] == "no-cache"
 
-    def test_sse_body_contains_expected_event_types(self):
+    def test_sse_body_contains_expected_event_types(self, client):
         with (
             patch("app.routers.chat.get_db", new=AsyncMock(return_value=MagicMock())),
             patch("app.routers.chat.load_history", new=AsyncMock(return_value=[])),
@@ -147,7 +151,7 @@ class TestStreamEndpoint:
         types = {e["type"] for e in parse_sse(response.text)}
         assert {"start-step", "text-start", "text-delta", "text-end", "finish-step", "__done__"}.issubset(types)
 
-    def test_text_delta_chunks_contain_correct_content(self):
+    def test_text_delta_chunks_contain_correct_content(self, client):
         with (
             patch("app.routers.chat.get_db", new=AsyncMock(return_value=MagicMock())),
             patch("app.routers.chat.load_history", new=AsyncMock(return_value=[])),
@@ -160,7 +164,7 @@ class TestStreamEndpoint:
         deltas = [e["delta"] for e in parse_sse(response.text) if e.get("type") == "text-delta"]
         assert deltas == ["Hello ", "teacher"]
 
-    def test_text_start_and_text_end_share_same_id(self):
+    def test_text_start_and_text_end_share_same_id(self, client):
         with (
             patch("app.routers.chat.get_db", new=AsyncMock(return_value=MagicMock())),
             patch("app.routers.chat.load_history", new=AsyncMock(return_value=[])),
@@ -177,7 +181,7 @@ class TestStreamEndpoint:
 
     # --- history creation ---
 
-    def test_new_conversation_creates_history(self):
+    def test_new_conversation_creates_history(self, client):
         mock_create = AsyncMock(return_value="created-hist")
         mock_load = AsyncMock()
 
@@ -193,7 +197,7 @@ class TestStreamEndpoint:
         mock_create.assert_awaited_once()
         mock_load.assert_not_awaited()
 
-    def test_new_conversation_history_id_in_header(self):
+    def test_new_conversation_history_id_in_header(self, client):
         with (
             patch("app.routers.chat.get_db", new=AsyncMock(return_value=MagicMock())),
             patch("app.routers.chat.load_history", new=AsyncMock(return_value=[])),
@@ -207,7 +211,7 @@ class TestStreamEndpoint:
 
     # --- existing conversation ---
 
-    def test_existing_conversation_loads_history_not_create(self):
+    def test_existing_conversation_loads_history_not_create(self, client):
         mock_load = AsyncMock(return_value=[{"role": "user", "content": "prev"}])
         mock_create = AsyncMock()
 
@@ -223,7 +227,7 @@ class TestStreamEndpoint:
         mock_load.assert_awaited_once()
         mock_create.assert_not_awaited()
 
-    def test_existing_conversation_echoes_history_id_in_header(self):
+    def test_existing_conversation_echoes_history_id_in_header(self, client):
         with (
             patch("app.routers.chat.get_db", new=AsyncMock(return_value=MagicMock())),
             patch("app.routers.chat.load_history", new=AsyncMock(return_value=[])),
@@ -237,7 +241,7 @@ class TestStreamEndpoint:
 
         assert response.headers["x-chat-history-id"] == "existing-99"
 
-    def test_prior_messages_prepended_to_agent_input(self):
+    def test_prior_messages_prepended_to_agent_input(self, client):
         prior = [{"role": "user", "content": "earlier question"}]
         runner = make_runner(["ok"])
 
@@ -257,7 +261,7 @@ class TestStreamEndpoint:
 
     # --- message persistence ---
 
-    def test_messages_persisted_after_stream_completes(self):
+    def test_messages_persisted_after_stream_completes(self, client):
         mock_append = AsyncMock()
 
         with (
@@ -275,7 +279,7 @@ class TestStreamEndpoint:
         assert kwargs["user_message"] == "Save this"
         assert kwargs["assistant_message"] == "Hello world"
 
-    def test_persisted_assistant_message_is_full_concatenated_response(self):
+    def test_persisted_assistant_message_is_full_concatenated_response(self, client):
         mock_append = AsyncMock()
 
         with (
@@ -291,7 +295,7 @@ class TestStreamEndpoint:
 
     # --- max turns exceeded ---
 
-    def test_max_turns_exceeded_streams_fallback_message(self):
+    def test_max_turns_exceeded_streams_fallback_message(self, client):
         from agents.exceptions import MaxTurnsExceeded
 
         async def _stream_raises():
@@ -317,7 +321,7 @@ class TestStreamEndpoint:
         full_text = "".join(deltas)
         assert "too many steps" in full_text
 
-    def test_max_turns_exceeded_still_persists_messages(self):
+    def test_max_turns_exceeded_still_persists_messages(self, client):
         from agents.exceptions import MaxTurnsExceeded
 
         async def _stream_raises():
@@ -343,7 +347,7 @@ class TestStreamEndpoint:
 
     # --- non-text events from the agent ---
 
-    def test_non_output_delta_events_produce_no_text_delta_chunks(self):
+    def test_non_output_delta_events_produce_no_text_delta_chunks(self, client):
         async def _other_events():
             yield _Event("agent_updated_stream_event")
             yield _Event("run_item_stream_event")
@@ -368,7 +372,7 @@ class TestStreamEndpoint:
 
     # --- edge cases ---
 
-    def test_empty_messages_list_sends_empty_user_message(self):
+    def test_empty_messages_list_sends_empty_user_message(self, client):
         mock_append = AsyncMock()
 
         with (
@@ -383,7 +387,7 @@ class TestStreamEndpoint:
         assert response.status_code == 200
         assert mock_append.call_args.kwargs["user_message"] == ""
 
-    def test_agent_called_with_max_turns_25(self):
+    def test_agent_called_with_max_turns_25(self, client):
         runner = make_runner(["ok"])
 
         with (
@@ -405,7 +409,7 @@ class TestStreamEndpoint:
 
 class TestGetHistories:
 
-    def test_returns_200_with_list(self):
+    def test_returns_200_with_list(self, client):
         mock_db = MagicMock()
         mock_db.chathistory.find_many = AsyncMock(return_value=[])
 
@@ -415,7 +419,7 @@ class TestGetHistories:
         assert response.status_code == 200
         assert isinstance(response.json(), list)
 
-    def test_returns_history_with_expected_fields(self):
+    def test_returns_history_with_expected_fields(self, client):
         hist = make_history("h-1", messages=[make_message("user", "Hello")])
         mock_db = MagicMock()
         mock_db.chathistory.find_many = AsyncMock(return_value=[hist])
@@ -429,7 +433,7 @@ class TestGetHistories:
         assert "updatedAt" in item
         assert "preview" in item
 
-    def test_preview_is_first_message_content(self):
+    def test_preview_is_first_message_content(self, client):
         hist = make_history("h-1", messages=[make_message("user", "Tell me about Alice")])
         mock_db = MagicMock()
         mock_db.chathistory.find_many = AsyncMock(return_value=[hist])
@@ -439,7 +443,7 @@ class TestGetHistories:
 
         assert response.json()[0]["preview"] == "Tell me about Alice"
 
-    def test_preview_truncated_to_80_chars(self):
+    def test_preview_truncated_to_80_chars(self, client):
         long_msg = make_message("user", "A" * 120)
         hist = make_history("h-1", messages=[long_msg])
         mock_db = MagicMock()
@@ -450,7 +454,7 @@ class TestGetHistories:
 
         assert response.json()[0]["preview"] == "A" * 80
 
-    def test_preview_is_new_conversation_when_no_messages(self):
+    def test_preview_is_new_conversation_when_no_messages(self, client):
         hist = make_history("h-1", messages=[])
         mock_db = MagicMock()
         mock_db.chathistory.find_many = AsyncMock(return_value=[hist])
@@ -460,7 +464,7 @@ class TestGetHistories:
 
         assert response.json()[0]["preview"] == "New conversation"
 
-    def test_returns_empty_list_when_no_histories(self):
+    def test_returns_empty_list_when_no_histories(self, client):
         mock_db = MagicMock()
         mock_db.chathistory.find_many = AsyncMock(return_value=[])
 
@@ -469,7 +473,7 @@ class TestGetHistories:
 
         assert response.json() == []
 
-    def test_queries_by_teacher_user_id(self):
+    def test_queries_by_teacher_user_id(self, client):
         mock_db = MagicMock()
         mock_db.chathistory.find_many = AsyncMock(return_value=[])
 
@@ -479,7 +483,7 @@ class TestGetHistories:
         kwargs = mock_db.chathistory.find_many.call_args.kwargs
         assert kwargs["where"]["userId"] == "seed_teacher_id"
 
-    def test_queries_limited_to_50_ordered_by_updated_desc(self):
+    def test_queries_limited_to_50_ordered_by_updated_desc(self, client):
         mock_db = MagicMock()
         mock_db.chathistory.find_many = AsyncMock(return_value=[])
 
@@ -490,7 +494,7 @@ class TestGetHistories:
         assert kwargs["take"] == 50
         assert kwargs["order"] == {"updatedAt": "desc"}
 
-    def test_returns_multiple_histories(self):
+    def test_returns_multiple_histories(self, client):
         hists = [
             make_history("h-1", messages=[make_message("user", "Q1")]),
             make_history("h-2", messages=[make_message("user", "Q2")]),
@@ -512,7 +516,7 @@ class TestGetHistories:
 
 class TestGetHistoryMessages:
 
-    def test_returns_200_with_list(self):
+    def test_returns_200_with_list(self, client):
         mock_db = MagicMock()
         mock_db.chatmessage.find_many = AsyncMock(return_value=[])
 
@@ -522,7 +526,7 @@ class TestGetHistoryMessages:
         assert response.status_code == 200
         assert response.json() == []
 
-    def test_returns_messages_with_correct_fields(self):
+    def test_returns_messages_with_correct_fields(self, client):
         ts = datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
         msgs = [
             make_message("user", "Hello", ts),
@@ -539,7 +543,7 @@ class TestGetHistoryMessages:
         assert data[0] == {"role": "user", "content": "Hello", "timestamp": ts.isoformat()}
         assert data[1] == {"role": "assistant", "content": "Hi there", "timestamp": ts.isoformat()}
 
-    def test_queries_by_the_provided_history_id(self):
+    def test_queries_by_the_provided_history_id(self, client):
         mock_db = MagicMock()
         mock_db.chatmessage.find_many = AsyncMock(return_value=[])
 
@@ -549,7 +553,7 @@ class TestGetHistoryMessages:
         kwargs = mock_db.chatmessage.find_many.call_args.kwargs
         assert kwargs["where"]["chatHistoryId"] == "target-id"
 
-    def test_messages_fetched_in_ascending_timestamp_order(self):
+    def test_messages_fetched_in_ascending_timestamp_order(self, client):
         mock_db = MagicMock()
         mock_db.chatmessage.find_many = AsyncMock(return_value=[])
 
@@ -559,7 +563,7 @@ class TestGetHistoryMessages:
         kwargs = mock_db.chatmessage.find_many.call_args.kwargs
         assert kwargs["order"] == {"timestamp": "asc"}
 
-    def test_returns_both_user_and_assistant_messages(self):
+    def test_returns_both_user_and_assistant_messages(self, client):
         ts = datetime(2024, 6, 1, tzinfo=timezone.utc)
         msgs = [
             make_message("user", "Question", ts),
