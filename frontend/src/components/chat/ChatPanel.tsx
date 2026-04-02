@@ -18,38 +18,19 @@ interface Props {
 	onHistoryCreated: (id: string) => void;
 }
 
-export function ChatPanel({ historyId, onHistoryCreated }: Props) {
-	const [currentHistoryId, setCurrentHistoryId] = useState(historyId);
-	const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
-	const [loadingHistory, setLoadingHistory] = useState(!!historyId);
+interface InnerProps {
+	historyId: string | null;
+	initialMessages: UIMessage[];
+	onHistoryCreated: (id: string) => void;
+}
 
-	// Stable ref so the custom fetch can call the callback without stale closure
+function ChatPanelInner({ historyId, initialMessages, onHistoryCreated }: InnerProps) {
+	const [currentHistoryId, setCurrentHistoryId] = useState(historyId);
+
 	const onHistoryCreatedRef = useRef(onHistoryCreated);
 	onHistoryCreatedRef.current = onHistoryCreated;
 	const currentHistoryIdRef = useRef(currentHistoryId);
 	currentHistoryIdRef.current = currentHistoryId;
-
-	useEffect(() => {
-		if (!historyId) {
-			setInitialMessages([]);
-			setLoadingHistory(false);
-			return;
-		}
-		setLoadingHistory(true);
-		fetch(`/api/chat/histories/${historyId}/messages`)
-			.then((r) => r.json())
-			.then((msgs: StoredMessage[]) => {
-				setInitialMessages(
-					msgs.map((m, i) => ({
-						id: `history-${i}`,
-						role: m.role,
-						content: m.content,
-						parts: [{ type: "text" as const, text: m.content }],
-					})),
-				);
-			})
-			.finally(() => setLoadingHistory(false));
-	}, [historyId]);
 
 	// Custom fetch that captures the x-chat-history-id response header
 	const customFetch = useMemo(
@@ -66,7 +47,7 @@ export function ChatPanel({ historyId, onHistoryCreated }: Props) {
 				}
 				return response;
 			},
-		[], // stable — uses refs for dynamic values
+		[],
 	);
 
 	const transport = useMemo(
@@ -76,7 +57,6 @@ export function ChatPanel({ historyId, onHistoryCreated }: Props) {
 				body: { historyId: currentHistoryId },
 				fetch: customFetch,
 			}),
-		// Recreate transport when historyId changes (e.g. after first message creates it)
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[currentHistoryId, customFetch],
 	);
@@ -100,14 +80,6 @@ export function ChatPanel({ historyId, onHistoryCreated }: Props) {
 
 	function handleSend(text: string) {
 		void sendMessage({ text });
-	}
-
-	if (loadingHistory) {
-		return (
-			<div className="flex flex-col flex-1 items-center justify-center text-gray-400 text-sm">
-				Loading conversation…
-			</div>
-		);
 	}
 
 	const hasMessages = messages.length > 0 || isStreaming;
@@ -153,5 +125,49 @@ export function ChatPanel({ historyId, onHistoryCreated }: Props) {
 				/>
 			</div>
 		</div>
+	);
+}
+
+export function ChatPanel({ historyId, onHistoryCreated }: Props) {
+	const [initialMessages, setInitialMessages] = useState<UIMessage[] | null>(
+		historyId ? null : [],
+	);
+
+	useEffect(() => {
+		if (!historyId) {
+			setInitialMessages([]);
+			return;
+		}
+		setInitialMessages(null);
+		fetch(`/api/chat/histories/${historyId}/messages`)
+			.then((r) => r.json())
+			.then((msgs: StoredMessage[]) => {
+				setInitialMessages(
+					msgs.map((m, i) => ({
+						id: `history-${i}`,
+						role: m.role,
+						content: m.content,
+						parts: [{ type: "text" as const, text: m.content }],
+					})),
+				);
+			})
+			.catch(() => setInitialMessages([]));
+	}, [historyId]);
+
+	if (initialMessages === null) {
+		return (
+			<div className="flex flex-col flex-1 items-center justify-center text-gray-400 text-sm">
+				Loading conversation…
+			</div>
+		);
+	}
+
+	return (
+		<ChatPanelInner
+			key={historyId ?? "new"}
+			historyId={historyId}
+			initialMessages={initialMessages}
+			onHistoryCreated={onHistoryCreated}
+		/>
 	);
 }
